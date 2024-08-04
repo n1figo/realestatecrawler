@@ -1,78 +1,74 @@
-import os
-import logging
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
+import requests
+import pandas as pd
+import streamlit as st
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Chrome 옵션 설정
-chrome_options = Options()
-chrome_options.add_argument("--headless")
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
-chrome_options.add_argument("--window-size=1920,1080")
-chrome_options.add_argument("--disable-gpu")
-chrome_options.add_argument("--remote-debugging-port=9222")
-
-# Chrome 경로 설정 (Codespaces의 일반적인 Chrome 위치)
-CHROME_PATH = "/usr/bin/google-chrome"
-if os.path.exists(CHROME_PATH):
-    chrome_options.binary_location = CHROME_PATH
-    logging.info(f"Chrome found at {CHROME_PATH}")
-else:
-    logging.warning(f"Chrome not found at {CHROME_PATH}. Attempting to use system default.")
-
-try:
-    # WebDriver 설정
-    logging.info("Initializing Chrome WebDriver...")
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-
-    # 페이지 로드
-    url = "https://new.land.naver.com/houses?ms=37.5342137,127.0625872,16&a=VL:DDDGG:JWJT:SGJT:HOJT&b=A1&e=RETAIL"
-    logging.info(f"Loading page: {url}")
-    driver.get(url)
-
-    # 데이터 추출
-    logging.info("Extracting data...")
+def get_mwul_numbers(api_url):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
     try:
-        # 페이지가 완전히 로드될 때까지 기다림
-        element = WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "item"))
-        )
+        response = requests.get(api_url, headers=headers)
+        response.raise_for_status()  # HTTPError 발생 시 예외 처리
+    except requests.exceptions.RequestException as e:
+        st.error(f"Request failed: {e}")
+        return []
+
+    if response.status_code == 200:
+        try:
+            data = response.json()
+            articles = data.get('body', [])
+            return articles
+        except ValueError as e:
+            st.error(f"Failed to parse JSON: {e}")
+            st.error(f"Response content: {response.content}")
+            return []
+    else:
+        st.error(f"Failed to fetch data: {response.status_code}")
+        st.error(f"Response content: {response.content}")
+        return []
+
+def save_to_csv_and_visualize(articles):
+    if articles:
+        df = pd.DataFrame(articles)
         
-        # 데이터 추출 로직
-        items = driver.find_elements(By.CLASS_NAME, "item")
-        for index, item in enumerate(items, start=1):
-            try:
-                title = item.find_element(By.CLASS_NAME, "item_title").text
-                price = item.find_element(By.CLASS_NAME, "price").text
-                info = item.find_element(By.CLASS_NAME, "info_area").text
-                
-                logging.info(f"Item {index}: Title: {title}, Price: {price}")
-                logging.info(f"Info: {info}")
-                logging.info("-" * 50)
-            except Exception as e:
-                logging.error(f"Error extracting data from item {index}: {str(e)}")
+        # 모든 매물 정보 DataFrame 표시
+        st.write("### 매물 정보")
+        st.dataframe(df.style.set_properties(**{'text-align': 'left'}).set_table_styles({
+            'all': [
+                {
+                    'selector': 'th',
+                    'props': 'text-align: left;'
+                }
+            ]
+        }))
 
-    except TimeoutException:
-        logging.error("Timeout waiting for page to load")
-    except Exception as e:
-        logging.error(f"Error during data extraction: {str(e)}")
+        # CSV 다운로드 링크 생성
+        csv = df.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="Download articles.csv",
+            data=csv,
+            file_name='articles.csv',
+            mime='text/csv'
+        )
+    else:
+        st.warning("No articles to save.")
 
-except WebDriverException as e:
-    logging.error(f"WebDriver error: {str(e)}")
-except Exception as e:
-    logging.error(f"Unexpected error: {str(e)}")
+def main():
+    st.title("네이버 부동산 매물 정보 추출기")
 
-finally:
-    logging.info("Closing WebDriver...")
-    if 'driver' in locals():
-        driver.quit()
+    # URL 입력란
+    api_url = st.text_input("API URL을 입력하세요:", "")
+    
+    if st.button("데이터 가져오기"):
+        if api_url:
+            articles = get_mwul_numbers(api_url)
+            if articles:
+                st.success("매물번호 추출 성공!")
+                save_to_csv_and_visualize(articles)
+            else:
+                st.error("매물번호 추출 실패.")
+        else:
+            st.warning("URL을 입력하세요.")
+
+if __name__ == "__main__":
+    main()
