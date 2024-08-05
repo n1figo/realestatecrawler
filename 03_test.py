@@ -43,7 +43,7 @@ def save_to_csv_and_visualize(articles):
         }))
 
         # CSV 다운로드 링크 생성
-        csv = df.to_csv(index=False, encoding='utf-8-sig')
+        csv = df.to_csv(index=False, encoding='cp949')
         st.download_button(
             label="Download articles.csv",
             data=csv,
