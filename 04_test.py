@@ -45,9 +45,8 @@ def save_to_xlsx_and_visualize(articles):
 
         # XLSX 다운로드 링크 생성
         output = BytesIO()
-        writer = pd.ExcelWriter(output, engine='openpyxl')
-        df.to_excel(writer, index=False, sheet_name='Articles')
-        writer.save()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Articles')
         xlsx_data = output.getvalue()
         
         st.download_button(
